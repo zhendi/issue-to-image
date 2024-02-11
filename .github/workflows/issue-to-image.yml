@@ -1,0 +1,39 @@
+name: Issue to image
+permissions:
+  issues: write
+on:
+  issues:
+    types:
+      - opened
+jobs:
+  respond-to-issue:
+    if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'renovate[bot]' && github.actor != 'githubactions[bot]' && github.actor != 'octokitbot' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine issue
+        id: extract
+        run: |
+          echo "NUMBER=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+
+          curl "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CF_ACCOUNT }}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0" \
+               -X POST \
+               -H "Authorization: Bearer ${{ secrets.CF_TOKEN }}" \
+               -d '{ "prompt": "${{ github.event.issue.title }} ${{ github.event.issue.body }}" }' > result.png
+
+          image_url=$(curl -s -X POST \
+                              -F "smfile=@result.png" \
+                              -H "Content-Type: multipart/form-data" \
+                              -H "Authorization: ${{ secrets.SM_MS_TOKEN }}" \
+                              https://smms.app/api/v2/upload \
+                              | jq -r '.data.url')
+
+          echo $image_url
+          echo "IMAGE_URL=$image_url" >> "$GITHUB_OUTPUT"
+
+
+      - name: Respond to issue
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          issue-number: ${{ steps.extract.outputs.NUMBER }}
+          body: >
+            ![result](${{ steps.extract.outputs.IMAGE_URL }})
